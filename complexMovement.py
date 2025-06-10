@@ -21,7 +21,7 @@ def defaultScene():
 
 var = spaceSetUp()
 def setSceneObjs():                            #-2
-        testObj = Object(var, velocity=Vec3(1,0,0), objTrack=True, gravity=True)
+        testObj = Object(var, velocity=Vec3(0,0,0), objTrack=True, gravity=True)
         testObj.position = Vec3(0, 98, 0)#4.9
         testObj.totalEnergy = Vec3(0,testObj.mass * abs(var.FGRAV) * testObj.position.y,0)
 

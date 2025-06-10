@@ -60,7 +60,7 @@ class spaceSetUp():#Needs to be made variable
     def resetSceneObjs(Self):
         for I in Self.activeObjs:
             destroy(I, delay=0.0)
-        setSceneObjs()
+        Self.setSceneObjs()
 
     def setSceneInd(Self):
         Self.activeObjs = []
@@ -87,17 +87,10 @@ def vecMag(Vec):
 def absVec3(Vec):
     return Vec3(abs(Vec.x), abs(Vec.y), abs(Vec.z))
 
-def changeVec(Vec):
-    newVec = Vec
-    if abs(Vec.x) == -1:
-        newVec.x = 11
-    if Vec.y == -1:
-        newVec.x = 1
-    elif Vec.y == -1:
-        newVec.x = 1
-    if abs(Vec.z) == -1:
-        newVec.z = 1
-    return(newVec)
+def reflectVector(v, n): #ChatGPT Generated - Still understnading 
+    n = n.normalized()
+    scalar = v.dot(n) * 2
+    return v - n * scalar
 
 def phantomObj(realObj):
     savedPos = Vec3(realObj.position.x, realObj.position.y, realObj.position.z)
@@ -175,7 +168,7 @@ class Object(Entity):
         shader=lit_with_shadows_shader,
         collider=kwargs.get("model", "sphere")),
         Self.position = kwargs.get("position", Vec3(0,98,0))
-        
+        Self.uniqueName = kwargs.get("uniqueName", "TestBall")
         Self.immovable = kwargs.get("immovable", False)
         Self.gravityOn = kwargs.get("gravity", True)
         Self.mass = kwargs.get("mass", 1)
@@ -186,6 +179,8 @@ class Object(Entity):
         Self.netForce = kwargs.get("netForce", Vec3(0,0,0))
         Self.componentForces = kwargs.get("componentForces", [Vec3(0,0,0)])
         Self.objTrack = kwargs.get("objTrack", False)
+        Self.collisionDebounce = .1
+        Self.lastKnownCollision = 0.0
         #print(Self.velocity.normalized())
         Self.PotEnergy = Self.position.y*var.FGRAV*Self.mass*-1 if var.FGRAV != 0 and Self.gravityOn == True else 0
         print(Self.PotEnergy)
@@ -205,16 +200,16 @@ class Object(Entity):
         if Self.objTrack == True:
             var.objectTracking = Self
         var.activeObjs.append(Self)
-        
             
     def applyForce(Self, other, force):
             Self.componentForces.append(force)
             if other != None: #only used for gravity and immovable objects
-                other.componenetForces.append(force)
+                other.componenetForces.append(force * -1) #Force is applied in the opposite direction to the other object
     def updateState(Self, dT):
         if len(Self.componentForces) != 0:
             for comp in Self.componentForces:
                 Self.netForce += comp
+                
         Self.lKP = Self.position#lastKnownPosition
         Self.impulse = Self.netForce * dT#AKA: dM (Change in momentum)|| F=dM/dT
         Self.momentum += Self.impulse#Self.mass * Self.velocity
@@ -224,13 +219,17 @@ class Object(Entity):
         Self.position += Self.velocity*dT#*var.simSpeed#/instantFPS
 
         #Self.dW = Self.netForce * (Self.velocity*dT)
-        Self.keneticEnergy = vecMag(Self.velocity* Self.velocity * Self.velocity.normalized() *  Self.mass * .5)#(Self.momentum*Self.momentum)/(2*Self.mass)#Self.dW#
+        Self.keneticEnergy = Self.velocity* Self.velocity * Self.velocity.normalized() *  Self.mass * 0.5#(Self.momentum*Self.momentum)/(2*Self.mass)#Self.dW#
         #work per dT # * Self.velocity *Self.acceleration *dT
         #Self.keneticEnergy += Self.dW #.5 * Self.mass * (Self.velocity * Self.velocity) #Self.totalEnergy-Self.PotEnergy#
-        Self.PotEnergy = Self.position.y*var.FGRAV*Self.mass*-1#Need to account for gravity turing off#Vec3(0,Self.mass * abs(var.FGRAV) * Self.position.y,0)#Cause negative is just direction, not magnitude
+        Self.PotEnergy = Vec3(0, Self.position.y*var.FGRAV*Self.mass*-1.0,0)#Need to account for gravity turing off#Vec3(0,Self.mass * abs(var.FGRAV) * Self.position.y,0)#Cause negative is just direction, not magnitude
         #print("Components: ", Self.PotEnergy, Self.keneticEnergy)
         #print("Total Diff: ", Self.totalEnergy)#-960.4000000000001
+        # print(type(Self.keneticEnergy), type(Self.PotEnergy))
         Self.totalEnergy = Self.PotEnergy + Self.keneticEnergy
+        #print("Total Energy: ", Self.totalEnergy)
+        print(Self.keneticEnergy, Self.PotEnergy)
+        print(Self.keneticEnergy + Self.PotEnergy)
         if var.objectTracking != None and var.objectTracking == Self:
             obj = Self
             objInfo = var.objInfo
@@ -249,6 +248,20 @@ class Object(Entity):
 
         Self.netForce = Vec3(0,0,0)
         Self.componentForces = []
+
+def add_tag_to_entity(entity, text, y_offset=1.5, color=color.white, scale=2):#Chat GPT
+    """Attach a floating text tag above any Ursina entity."""
+    tag = Text(
+        text=text,
+        parent=entity,
+        y=y_offset,
+        z=-0.1,  # Slightly in front to avoid z-fighting
+        scale=scale,
+        origin=(0,0),
+        color=color,
+        background=True
+    )
+    return tag  # So you can keep a reference if you want to remove/update it later
 
 def shiftVec(Vec):
     return Vec3(Vec.z, Vec.x, Vec.y)
@@ -271,39 +284,55 @@ def update():
             var.totalFPS += instantFPS#instantFPS
             var.totalFrames += 1
             for obj in var.activeObjs:
+                # print(obj)
                 if obj.gravityOn: obj.applyForce(None, Vec3(0,var.FGRAV*obj.mass,0))
+                # Entity(model="sphere", color=color.white, scale=(1,1,1), position = obj.position, alpha=(54))#Phantom object
                 obj.updateState(dT)
                 rayVecMag = absVec3((obj.position - obj.lKP))+absVec3(obj.scale)#dP
                 rayVecMag = sqrt(rayVecMag.x**2 + rayVecMag.y**2 + rayVecMag.z**2)
                 rayVecDir = obj.velocity
                 hitInfo = raycast(origin=obj.lKP, direction=rayVecDir, distance=rayVecMag, traverse_target=scene, ignore=list([obj]), debug=True)
-                if hitInfo.hit:
+                onDebounce = var.simTime - obj.lastKnownCollision < obj.collisionDebounce    
+
+                if hitInfo.hit and not onDebounce:#If the raycast hit something and the last collision was more than obj.collisionDebounce seconds ago
+                    
+                    obj.position = hitInfo.world_point
                     normal = hitInfo.world_normal
                     normal = Vec3(round_to_closest(normal.x, 1), round_to_closest(normal.y, 1), round_to_closest(normal.z, 1))#Will need to change later
-                    #hitMarker = Entity(model="sphere",world_position=hitInfo.world_point, scale=(1,1,1), alpah=74, color = color.orange)#.world_rotation_y+=90
+                    hitMarker = Entity(model="sphere",world_position=hitInfo.world_point, scale=(1,1,1), alpah=74, color = color.orange)#.world_rotation_y+=90
+                    add_tag_to_entity(hitMarker, f"Hit at: {var.simTime}", y_offset=1.5, color=color.red, scale=10)
                     print("--------obj Hit--------")
                     print(f"Normal: {normal}")
                     for hit in hitInfo.entities:
                         print("Normal comp: ", normal.x, normal.y, normal.z)
-                        if type(hit) == Object:
-                            obj1NewVel = (obj.impulse-(obj.mass*obj.velocity))/hit.mass
-                            #obj2NewVel = (hit.impulse-(hit.mass*hit.velocity))/obj.mass
-                            newForce = obj.mass * ((-2*obj1NewVel)/dT)
+                        print("Vel Before: ", obj.velocity)
+                        print("Position: Before", obj.position)
+                        print("Time of collision: ", var.simTime)
+                        if type(hit) == Object:#True is only for objects which can be moved
+                            restitution = 1.0  # 1.0 = perfectly elastic, <1.0 = loses energy
+                            reflectedVelocity = reflectVector(obj.velocity, normal) * restitution
+                            impulse = (reflectedVelocity - obj.velocity) * obj.mass#
+                            obj.applyForce(hit, impulse / dT)  # Apply the force to both objects 
                             print("Is Object")
                         else:
-                            newForce = obj.mass * ((-2*obj.velocity)/dT)#This works for only 1 dimentional falls
-                            newForce = newForce*changeVec(normal)
-                            print("New Force: ", newForce)
-                            obj.applyForce(None, newForce)
+                            restitution = 1.0  # 1.0 = perfectly elastic, <1.0 = loses energy
+                            reflectedVelocity = reflectVector(obj.velocity, normal) * restitution
+                            impulse = (reflectedVelocity - obj.velocity) * obj.mass#
+                            # obj.applyImpulse(impulse)
+                            obj.applyForce(None, impulse / dT)  # Apply the impulse as a force over the time step
+
                             #pauseSimulation()
+                        #pauseSimulation()
+                        
                     print("-----------------------")
-                              
-                    obj.updateState(dT)#I don't know why this has to be here, but it does             
+                    obj.updateState(dT)#I don't know why this has to be here, but it does
+                    print("Position: After", obj.position)
+                    print("Vel After: ", obj.velocity)
+                    obj.lastKnownCollision = var.simTime              
             if var.singleFrame == True:#Must have intital normal start
                 var.simulating = False
                 var.singleFrame = False
             var.lastUpdate = time.time()
-            #pauseSimulation() 
             
     if var.firstPerson:
         #["w": var.FPC.forward, "s": var.FPC.back, "a":var.FPC.left, "d": var.FPC.right,
@@ -363,5 +392,11 @@ def input(key):
             
 #app.run()
 #To do list
+#Make physics cals impulse and momnetum based
+#Fix Kenetic Energy and Potential Energy
+#Test collision with movable objects
+#Add torque and angular momentum 
+#Add air resistence and air density (Will need to calculate drag and lift for certian objects)
+#Integrate materials and material properties (density, friction coefficents, etc.)
 #Make a spring object
 #Model collisions
