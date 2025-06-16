@@ -183,9 +183,9 @@ class Object(Entity):
         Self.lastKnownCollision = 0.0
         #print(Self.velocity.normalized())
         Self.PotEnergy = Self.position.y*var.FGRAV*Self.mass*-1 if var.FGRAV != 0 and Self.gravityOn == True else 0
-        print(Self.PotEnergy)
+        # print(Self.PotEnergy)
         Self.keneticEnergy = vecMag(Self.velocity* Self.velocity * Self.velocity.normalized() *  Self.mass * .5)
-        print(Self.keneticEnergy)
+        # print(Self.keneticEnergy)
         Self.totalEnergy = Self.PotEnergy + Self.keneticEnergy
         #Self.energyAggregate = 
         
@@ -195,7 +195,7 @@ class Object(Entity):
         Self.volume = 1 #m^3
         #Self.angularVelocity = 0#1
         #Self.angularAcceleration = 0#1
-        print("Energy: ", Self.totalEnergy)
+        # print("Energy: ", Self.totalEnergy)
         #Self.totalWorkDone
         if Self.objTrack == True:
             var.objectTracking = Self
@@ -209,6 +209,9 @@ class Object(Entity):
         if len(Self.componentForces) != 0:
             for comp in Self.componentForces:
                 Self.netForce += comp
+
+        dX = Self.position - Self.lKP#dX is the change in position
+        dV = dX/dT#dV is the change in velocity
                 
         Self.lKP = Self.position#lastKnownPosition
         Self.impulse = Self.netForce * dT#AKA: dM (Change in momentum)|| F=dM/dT
@@ -219,17 +222,17 @@ class Object(Entity):
         Self.position += Self.velocity*dT#*var.simSpeed#/instantFPS
 
         #Self.dW = Self.netForce * (Self.velocity*dT)
-        Self.keneticEnergy = Self.velocity* Self.velocity * Self.velocity.normalized() *  Self.mass * 0.5#(Self.momentum*Self.momentum)/(2*Self.mass)#Self.dW#
+        Self.keneticEnergy = 0.5 * Self.mass * (Self.velocity.x**2 + Self.velocity.y**2 + Self.velocity.z**2)#(Self.momentum*Self.momentum)/(2*Self.mass)#Self.dW#
         #work per dT # * Self.velocity *Self.acceleration *dT
         #Self.keneticEnergy += Self.dW #.5 * Self.mass * (Self.velocity * Self.velocity) #Self.totalEnergy-Self.PotEnergy#
-        Self.PotEnergy = Vec3(0, Self.position.y*var.FGRAV*Self.mass*-1.0,0)#Need to account for gravity turing off#Vec3(0,Self.mass * abs(var.FGRAV) * Self.position.y,0)#Cause negative is just direction, not magnitude
+        Self.PotEnergy = Self.position.y * var.FGRAV * Self.mass * -1#Need to account for gravity turing off#Vec3(0,Self.mass * abs(var.FGRAV) * Self.position.y,0)#Cause negative is just direction, not magnitude
         #print("Components: ", Self.PotEnergy, Self.keneticEnergy)
         #print("Total Diff: ", Self.totalEnergy)#-960.4000000000001
         # print(type(Self.keneticEnergy), type(Self.PotEnergy))
         Self.totalEnergy = Self.PotEnergy + Self.keneticEnergy
-        #print("Total Energy: ", Self.totalEnergy)
-        print(Self.keneticEnergy, Self.PotEnergy)
-        print(Self.keneticEnergy + Self.PotEnergy)
+        print("Total Energy: ", Self.totalEnergy)
+        # print(Self.keneticEnergy + Self.PotEnergy)
+        # print(Self.keneticEnergy + Self.PotEnergy)
         if var.objectTracking != None and var.objectTracking == Self:
             obj = Self
             objInfo = var.objInfo
@@ -296,13 +299,14 @@ def update():
 
                 if hitInfo.hit and not onDebounce:#If the raycast hit something and the last collision was more than obj.collisionDebounce seconds ago
                     
-                    obj.position = hitInfo.world_point
+                    # obj.position = hitInfo.world_point
                     normal = hitInfo.world_normal
                     normal = Vec3(round_to_closest(normal.x, 1), round_to_closest(normal.y, 1), round_to_closest(normal.z, 1))#Will need to change later
                     hitMarker = Entity(model="sphere",world_position=hitInfo.world_point, scale=(1,1,1), alpah=74, color = color.orange)#.world_rotation_y+=90
                     add_tag_to_entity(hitMarker, f"Hit at: {var.simTime}", y_offset=1.5, color=color.red, scale=10)
                     print("--------obj Hit--------")
                     print(f"Normal: {normal}")
+                    
                     for hit in hitInfo.entities:
                         print("Normal comp: ", normal.x, normal.y, normal.z)
                         print("Vel Before: ", obj.velocity)
@@ -315,10 +319,23 @@ def update():
                             obj.applyForce(hit, impulse / dT)  # Apply the force to both objects 
                             print("Is Object")
                         else:
+
+
+                            #This was part of an expiermnt into a small conceptual issue with collisions, I haven't seen any practial issues so far, so im not going to continue to develop it
+                            #Cuase presently it adds just a little bit of energy to the object, where as it shouldn't be, im being lazy and not fixing it, and using the other method until I actuall
+                            #Run into an issue with it
+                            # residualDistance = rayVecMag - vecMag(absVec3(obj.world_position - hit.world_position))#This is to account for the fact that an object can collid with an object before actually hitting it
+                            # residualPosition = residualDistance * normal #Thus its position is slighly off from where it is supposed to be (This is a product of imprefect collisions and a fininate time step)
+                            # obj.position = residualPosition
+                            # print("Energy Before: ", obj.totalEnergy)
+                            # energyAfterResidualPosition = abs(obj.totalEnergy) -  abs(Vec3(0, obj.position.y*var.FGRAV*obj.mass,0).y) #* restitution
+                            # residualVelocity = normal * sqrt(2 * energyAfterResidualPosition / obj.mass) #This is to account for the fact that an object can collid with an object before actually hitting it
+                            # impulse = (residualVelocity - obj.velocity) * obj.mass
                             restitution = 1.0  # 1.0 = perfectly elastic, <1.0 = loses energy
+
                             reflectedVelocity = reflectVector(obj.velocity, normal) * restitution
                             impulse = (reflectedVelocity - obj.velocity) * obj.mass#
-                            # obj.applyImpulse(impulse)
+
                             obj.applyForce(None, impulse / dT)  # Apply the impulse as a force over the time step
 
                             #pauseSimulation()
